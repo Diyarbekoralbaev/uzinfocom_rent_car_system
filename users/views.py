@@ -1,16 +1,18 @@
+from uuid import uuid4
+
+from django.core.cache import cache
+from drf_yasg import openapi
+from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
-from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.response import Response
+from rest_framework.views import APIView
+
+from .models import UserModel, UserChoice
 from .serializers import UserSerializer, LoginSerializer, VerifySerializer, ChangePasswordSerializer, \
     ResetPasswordSerializer, ResetPasswordConfirmSerializer, \
     TopUpSerializer
-from .models import UserModel, UserChoice
-from rest_framework.permissions import IsAuthenticated, AllowAny
-from drf_yasg.utils import swagger_auto_schema
-from drf_yasg import openapi
-from django.core.cache import cache
 from .utils import generate_otp
-from uuid import uuid4
 
 
 class RegisterView(APIView):
@@ -253,5 +255,6 @@ class TopUpView(APIView):
                 user.balance += serializer.validated_data['amount']
                 user.save()
                 return Response({'message': 'Balance topped up successfully'}, status=status.HTTP_200_OK)
-            return Response({'message': 'You do not have permission to top up the balance'}, status=status.HTTP_403_FORBIDDEN)
+            return Response({'message': 'You do not have permission to top up the balance'},
+                            status=status.HTTP_403_FORBIDDEN)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
