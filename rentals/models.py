@@ -1,5 +1,11 @@
 from django.db import models
 
+class RentalStatusChoices(models.TextChoices):
+    PENDING = 'PENDING', 'Pending'
+    ACTIVE = 'ACTIVE', 'Active'
+    COMPLETED = 'COMPLETED', 'Completed'
+    CANCELLED = 'CANCELLED', 'Cancelled'
+
 class RentalModel(models.Model):
     client = models.ForeignKey('users.UserModel', on_delete=models.CASCADE, related_name='rentals')
     car = models.ForeignKey('vehicles.VehicleModel', on_delete=models.CASCADE)
@@ -8,12 +14,7 @@ class RentalModel(models.Model):
     start_date = models.DateTimeField()
     end_date = models.DateTimeField(null=True, blank=True)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    status = models.CharField(max_length=20, choices=[
-        ('PENDING', 'Pending'),
-        ('ACTIVE', 'Active'),
-        ('COMPLETED', 'Completed'),
-        ('CANCELLED', 'Cancelled')
-    ])
+    status = models.CharField(max_length=20, choices=RentalStatusChoices.choices, default=RentalStatusChoices.PENDING)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
