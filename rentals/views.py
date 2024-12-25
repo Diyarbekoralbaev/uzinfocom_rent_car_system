@@ -34,20 +34,27 @@ class RentalViewSet(viewsets.ModelViewSet):
         return RentalModel.objects.none()
 
     def create(self, request, *args, **kwargs):
-        user = request.user
-        vehicle = VehicleModel.objects.get(id=request.data['car'])
-        price = vehicle.daily_price
-        start_date = request.data['start_date']
-        end_date = request.data['end_date']
-        total_amount = price * (end_date - start_date).days
-        if user.balance < total_amount:
-            return Response({"error": "Insufficient balance"}, status=status.HTTP_400_BAD_REQUEST)
-        user.balance -= total_amount
-        user.save()
-        request.data['total_amount'] = total_amount
-        request.data['client'] = user.id
-        request.data['status'] = 'PENDING'
-        return super().create(request, *args, **kwargs)
+        rentals = RentalModel.objects.filter(client=request.user, status='ACTIVE')
+        if rentals.exists():
+            return Response({"error": "You already have an active rental"}, status=status.HTTP_400_BAD_REQUEST)
+        reservations = ReservationModel.objects.filter(client=request.user, status='CONFIRMED')
+        if reservations.exists():
+            return Response({"error": "You already have an active reservation"}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            user = request.user
+            vehicle = VehicleModel.objects.get(id=request.data['car'])
+            price = vehicle.daily_price
+            start_date = request.data['start_date']
+            end_date = request.data['end_date']
+            total_amount = price * (end_date - start_date).days
+            if user.balance < total_amount:
+                return Response({"error": "Insufficient balance"}, status=status.HTTP_400_BAD_REQUEST)
+            user.balance -= total_amount
+            user.save()
+            request.data['total_amount'] = total_amount
+            request.data['client'] = user.id
+            request.data['status'] = 'PENDING'
+            return super().create(request, *args, **kwargs)
 
     def update(self, request, *args, **kwargs):
         user = request.user
@@ -88,3 +95,15 @@ class RentalViewSet(viewsets.ModelViewSet):
                 return Response(serializer.data, status=status.HTTP_200_OK)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         return Response({"error": "You do not have permission to set status of a rental"}, status=status.HTTP_403_FORBIDDEN)
+
+    @action(detail=False, methods=['get'], url_path='return-car-to-station', permission_classes=[IsAuthenticated])
+    def return_car_to_station(self, request):
+        user = request.user
+        if user.role == UserChoice.CLIENT:
+            rental = RentalModel.objects.get(client=user, status='ACTIVE')
+            if rental:
+                rental.status = 'COMPLETED'
+                rental.save()
+                return Response({"message": "Car returned to station successfully"}, status=status.HTTP_200_OK)
+            return Response({"error": "No active rental found"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "You do not have permission to return a car to station"}, status=status.HTTP_403_FORBIDDEN)
