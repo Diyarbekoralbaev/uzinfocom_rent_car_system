@@ -13,10 +13,10 @@ from rest_framework.response import Response
 from stations.models import StationModel
 from vehicles.models import VehicleModel, VehicleStatusChoices
 from .models import RentalModel, ReservationModel, RentalStatusChoices, ReservationStatusChoices
-from users.models import UserChoice
+from users.models import UserChoice, UserModel
 from .serializers import RentalSerializer, ReservationSerializer
 from .utils import is_near_station
-
+from django.db.models import F
 
 @method_decorator(gzip_page, name='dispatch')
 class RentalViewSet(viewsets.ModelViewSet):
@@ -32,85 +32,94 @@ class RentalViewSet(viewsets.ModelViewSet):
         Overriding the default `get_queryset` to handle filtering based on user role.
         """
         if self.request.user.is_authenticated and self.request.user.role == UserChoice.CLIENT:
-            return RentalModel.objects.filter(client=self.request.user)
+            return RentalModel.objects.select_related('car').filter(client=self.request.user)
         elif self.request.user.is_authenticated and self.request.user.role == UserChoice.MANAGER:
-            return RentalModel.objects.all()
+            return RentalModel.objects.select_related('car', 'client').prefetch_related('pickup_station', 'return_station')
         return RentalModel.objects.none()
 
     def create(self, request, *args, **kwargs):
         with transaction.atomic():
-            rentals = RentalModel.objects.filter(client=request.user, status='ACTIVE')
-            if rentals.exists():
-                return Response({"error": "You already have an active rental"}, status=status.HTTP_400_BAD_REQUEST)
-            # reservations = ReservationModel.objects.filter(client=request.user, status='CONFIRMED')
-            # if reservations.exists():
-            #     return Response({"error": "You already have an active reservation"}, status=status.HTTP_400_BAD_REQUEST)
+            user = UserModel.objects.select_for_update().get(id=request.user.id)
+            vehicle = VehicleModel.objects.select_for_update().get(id=request.data['car'])
+            if RentalModel.objects.filter(client=user, status='ACTIVE').exists():
+                return Response({"error": "You already have an active rental"},
+                                status=status.HTTP_400_BAD_REQUEST)
+            start_date = request.data.get('start_date')
+            end_date = request.data.get('end_date')
+            if ReservationModel.objects.filter(car=request.data['car'], start_date__lte=end_date, end_date__gte=start_date, status='CONFIRMED').exists():
+                return Response({"error": "This car is already reserved in this time period. Please choose another car or time period."}, status=status.HTTP_400_BAD_REQUEST)
             else:
-                user = request.user
-                vehicle = VehicleModel.objects.get(id=request.data['car'])
                 price = vehicle.daily_price
                 start_date = request.data['start_date']
                 end_date = request.data['end_date']
                 total_amount = price * (end_date - start_date).days
                 if user.balance < total_amount:
                     return Response({"error": "Insufficient balance"}, status=status.HTTP_400_BAD_REQUEST)
-                user.balance -= total_amount
+                user.balance = F('balance') - total_amount
                 user.save()
-                request.data['total_amount'] = total_amount
-                request.data['client'] = user.id
-                request.data['status'] = 'PENDING'
-                return super().create(request, *args, **kwargs)
+                # Create the rental
+                data = request.data.copy()
+                data['client'] = user.id
+                data['status'] = RentalStatusChoices.PENDING
+                data['total_amount'] = total_amount
+
+                serializer = self.get_serializer(data=data)
+                serializer.is_valid(raise_exception=True)
+                rental = serializer.save()
+
+                return Response(RentalSerializer(rental).data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
-        user = request.user
-        rental = self.get_object()
-        if user.role == UserChoice.CLIENT:
-            if request.data.get('status') == RentalStatusChoices.CANCELLED:
-                if rental.status == RentalStatusChoices.PENDING:
-                    user.balance += rental.total_amount
-                    user.save()
-                if rental.status == RentalStatusChoices.ACTIVE:
-                    return Response({"error": "You cannot cancel an active rental. Please return the car to the station and set status to completed."}, status=status.HTTP_400_BAD_REQUEST)
-                return super().update(request, *args, **kwargs)
-            # Handle date updates
-            if 'start_date' in request.data or 'end_date' in request.data:
-                start_date = request.data.get('start_date', rental.start_date)
-                end_date = request.data.get('end_date', rental.end_date)
+        with transaction.atomic():
+            user = UserModel.objects.select_for_update().get(id=request.user.id)
+            rental = self.get_object()
+            if user.role == UserChoice.CLIENT:
+                if request.data.get('status') == RentalStatusChoices.CANCELLED:
+                    if rental.status == RentalStatusChoices.PENDING:
+                        user.balance += rental.total_amount
+                        user.save()
+                    if rental.status == RentalStatusChoices.ACTIVE:
+                        return Response({"error": "You cannot cancel an active rental. Please return the car to the station and set status to completed."}, status=status.HTTP_400_BAD_REQUEST)
+                    return super().update(request, *args, **kwargs)
+                # Handle date updates
+                if 'start_date' in request.data or 'end_date' in request.data:
+                    start_date = request.data.get('start_date', rental.start_date)
+                    end_date = request.data.get('end_date', rental.end_date)
 
-                try:
-                    # Parse dates if they are strings
-                    if isinstance(start_date, str):
-                        start_date = datetime.fromisoformat(start_date)
-                    if isinstance(end_date, str):
-                        end_date = datetime.fromisoformat(end_date)
+                    try:
+                        # Parse dates if they are strings
+                        if isinstance(start_date, str):
+                            start_date = datetime.fromisoformat(start_date)
+                        if isinstance(end_date, str):
+                            end_date = datetime.fromisoformat(end_date)
 
-                    # Validate date logic
-                    if start_date >= end_date:
-                        return Response({"error": "Start date must be before end date"},
-                                        status=status.HTTP_400_BAD_REQUEST)
-
-                    # Calculate new total based on updated dates
-                    new_total_amount = rental.car.daily_price * (end_date - start_date).days
-
-                    # Calculate the difference from the already charged amount
-                    amount_difference = new_total_amount - rental.total_amount
-
-                    # Check and update user balance
-                    if amount_difference > 0:  # New total is higher, charge the user
-                        if user.balance < amount_difference:
-                            return Response({"error": "Insufficient balance to update rental"},
+                        # Validate date logic
+                        if start_date >= end_date:
+                            return Response({"error": "Start date must be before end date"},
                                             status=status.HTTP_400_BAD_REQUEST)
-                        user.balance -= amount_difference
-                    elif amount_difference < 0:  # New total is lower, refund the user
-                        user.balance += abs(amount_difference)
 
-                    # Save the updated balance and proceed
-                    user.save()
-                    request.data['total_amount'] = new_total_amount
+                        # Calculate new total based on updated dates
+                        new_total_amount = rental.car.daily_price * (end_date - start_date).days
 
-                except ValueError:
-                    return Response({"error": "Invalid date format provided"}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({"error": "You do not have permission to update a rental"}, status=status.HTTP_403_FORBIDDEN)
+                        # Calculate the difference from the already charged amount
+                        amount_difference = new_total_amount - rental.total_amount
+
+                        # Check and update user balance
+                        if amount_difference > 0:  # New total is higher, charge the user
+                            if user.balance < amount_difference:
+                                return Response({"error": "Insufficient balance to update rental"},
+                                                status=status.HTTP_400_BAD_REQUEST)
+                            user.balance -= amount_difference
+                        elif amount_difference < 0:  # New total is lower, refund the user
+                            user.balance += abs(amount_difference)
+
+                        # Save the updated balance and proceed
+                        user.save()
+                        request.data['total_amount'] = new_total_amount
+
+                    except ValueError:
+                        return Response({"error": "Invalid date format provided"}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"error": "You do not have permission to update a rental"}, status=status.HTTP_403_FORBIDDEN)
 
     def partial_update(self, request, *args, **kwargs):
         user = request.user
@@ -136,21 +145,55 @@ class RentalViewSet(viewsets.ModelViewSet):
     )
     @action(detail=True, methods=['post'], url_path='set-status', permission_classes=[IsAuthenticated])
     def set_status(self, request, pk=None):
-        user = request.user
-        if user.role == UserChoice.MANAGER:
-            rental = self.get_object()
-            serializer = RentalSerializer(rental, data=request.data, partial=True)
-            if serializer.is_valid():
-                rental = serializer.save()
+        with transaction.atomic():
+            user = request.user
+            if user.role == UserChoice.MANAGER:
+                rental = self.get_object()
+                new_status = request.data.get('status')
+
+                if not rental.can_transition_to(new_status):
+                    return Response({"error": f"Cannot transition from {rental.status} to {new_status}"},
+                                    status=status.HTTP_400_BAD_REQUEST)
+
+                if new_status not in [RentalStatusChoices.ACTIVE, RentalStatusChoices.COMPLETED,
+                                      RentalStatusChoices.CANCELLED]:
+                    return Response({"error": "Invalid status value"}, status=status.HTTP_400_BAD_REQUEST)
+
+                if new_status == RentalStatusChoices.CANCELLED and rental.status == RentalStatusChoices.ACTIVE:
+                    return Response({"error": "You cannot cancel an active rental. Please return the car to the station and set status to completed."}, status=status.HTTP_400_BAD_REQUEST)
+
+                if new_status == RentalStatusChoices.ACTIVE:
+                    # check for exiting reservation or rental in the same time
+                    if ReservationModel.objects.filter(car=rental.car, start_date__lte=rental.end_date, end_date__gte=rental.start_date, status='CONFIRMED').exists():
+                        return Response({"error": "This car is already reserved in this time period. Cancel the reservation first."}, status=status.HTTP_400_BAD_REQUEST)
+                    pending_reservations = ReservationModel.objects.filter(car=rental.car, start_date__lte=rental.end_date, end_date__gte=rental.start_date, status='PENDING')
+                    if pending_reservations.exists():
+                        for reservation in pending_reservations:
+                            reservation.status = ReservationStatusChoices.CANCELLED
+                            reservation.save()
+                elif new_status == RentalStatusChoices.COMPLETED:
+                    if not rental.return_station:
+                        return Response({"error": "Please set return station before completing the rental"}, status=status.HTTP_400_BAD_REQUEST)
+
+                rental.status = new_status
+                rental.save()
+
                 vehicle = rental.car
                 if rental.status == RentalStatusChoices.ACTIVE:
                     vehicle.status = VehicleStatusChoices.RENTED
-                elif rental.status == RentalStatusChoices.COMPLETED or rental.status == RentalStatusChoices.CANCELLED:
+                if rental.status == RentalStatusChoices.CANCELLED:
+                    client = rental.client
+                    client.balance += rental.total_amount
+                    client.save()
+                    vehicle.status = VehicleStatusChoices.AVAILABLE
+                elif rental.status == RentalStatusChoices.COMPLETED:
                     vehicle.status = VehicleStatusChoices.AVAILABLE
                 vehicle.save()
-                return Response(serializer.data, status=status.HTTP_200_OK)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        return Response({"error": "You do not have permission to set status of a rental"}, status=status.HTTP_403_FORBIDDEN)
+
+                return Response({"status": rental.status}, status=status.HTTP_200_OK)
+
+            return Response({"error": "You do not have permission to set status of a rental"},
+                            status=status.HTTP_403_FORBIDDEN)
 
     @swagger_auto_schema(
         methods=['post'],
@@ -192,7 +235,6 @@ class RentalViewSet(viewsets.ModelViewSet):
         return Response({"error": "You do not have permission to return a car to station"},
                         status=status.HTTP_403_FORBIDDEN)
 
-
 @method_decorator(gzip_page, name='dispatch')
 class ReservationViewSet(viewsets.ModelViewSet):
     """
@@ -215,20 +257,31 @@ class ReservationViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         user = request.user
-        vehicle = VehicleModel.objects.get(id=request.data['car'])
-        if ReservationModel.objects.filter(client=user, car=vehicle, status=ReservationStatusChoices.CONFIRMED).exists() or ReservationModel.objects.filter(client=user, car=vehicle, status=ReservationStatusChoices.PENDING).exists():
-            return Response({"error": "You already have a reservation for this car. Please wait for the manager to confirm or cancel it."}, status=status.HTTP_400_BAD_REQUEST)
-        # check for exiting reservation or rental in the same time
+        vehicle_id = request.data['car']
         start_date = request.data['start_date']
         end_date = request.data['end_date']
-        if ReservationModel.objects.filter(car=vehicle, start_date__lte=end_date, end_date__gte=start_date, status='CONFIRMED').exists():
-            return Response({"error": "This car is already reserved in this time period. Please choose another car or time period."}, status=status.HTTP_400_BAD_REQUEST)
-        if RentalModel.objects.filter(car=vehicle, start_date__lte=end_date, end_date__gte=start_date, status='ACTIVE').exists():
-            return Response({"error": "This car is already rented in this time period. Please choose another car or time period."}, status=status.HTTP_400_BAD_REQUEST)
-        # no need charge for reservation now. charge will be done when rental is created
-        request.data['client'] = user.id
-        request.data['status'] = ReservationStatusChoices.PENDING
-        return super().create(request, *args, **kwargs)
+        with transaction.atomic():
+            vehicle = VehicleModel.objects.select_for_update().get(id=vehicle_id)
+            if ReservationModel.objects.filter(client=user, car=vehicle, status=ReservationStatusChoices.CONFIRMED/ReservationStatusChoices.PENDING).exists(): # noqa
+                return Response({"error": "You already have a reservation for this car. Please wait for the manager to confirm or cancel it."}, status=status.HTTP_400_BAD_REQUEST)
+            # check for exiting reservation or rental in the same time
+            if ReservationModel.objects.filter(
+                    client=user,
+                    car=vehicle,
+                    status__in=[ReservationStatusChoices.PENDING, ReservationStatusChoices.CONFIRMED],
+                    start_date__lte=end_date,
+                    end_date__gte=start_date
+            ).exists():
+                return Response(
+                    {"error": "You already have an overlapping reservation for this car."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if RentalModel.objects.filter(car=vehicle, start_date__lte=end_date, end_date__gte=start_date, status='ACTIVE').exists():
+                return Response({"error": "This car is already rented in this time period. Please choose another car or time period."}, status=status.HTTP_400_BAD_REQUEST)
+            # no need charge for reservation now. charge will be done when rental is created
+            request.data['client'] = user.id
+            request.data['status'] = ReservationStatusChoices.PENDING
+            return super().create(request, *args, **kwargs)
 
     def update(self, request, *args, **kwargs):
         """
