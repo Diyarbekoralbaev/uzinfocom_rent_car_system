@@ -3,7 +3,7 @@ from .models import RentalModel, ReservationModel
 from users.models import UserModel
 from vehicles.models import VehicleModel, VehicleStatusChoices
 from stations.models import StationModel
-
+from django.utils import timezone
 
 class RentalSerializer(serializers.ModelSerializer):
     class Meta:
@@ -16,6 +16,7 @@ class RentalSerializer(serializers.ModelSerializer):
             'created_at': {'read_only': True},
             'updated_at': {'read_only': True},
             'total_amount': {'read_only': True},
+            'start_date': {'required': True},
             'end_date': {'required': True},
             'pickup_station': {'required': True},
             'return_station': {'required': False},
@@ -52,8 +53,10 @@ class RentalSerializer(serializers.ModelSerializer):
         return value
 
     def validate(self, data):
-        if data['start_date'] > data['end_date']:
+        if data['start_date'] >= data['end_date']:
             raise serializers.ValidationError("End date must be greater than start date.")
+        if data['start_date'] < timezone.now():
+            raise serializers.ValidationError("Cannot rent a car in the past.")
         return data
 
 
@@ -86,4 +89,6 @@ class ReservationSerializer(serializers.ModelSerializer):
     def validate(self, data):
         if data['start_date'] > data['end_date']:
             raise serializers.ValidationError("End date must be greater than start date.")
+        if data['start_date'] < timezone.now():
+            raise serializers.ValidationError("Cannot reserve a car in the past.")
         return data
