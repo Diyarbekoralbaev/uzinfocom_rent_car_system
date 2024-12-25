@@ -9,7 +9,7 @@ from drf_yasg.utils import swagger_auto_schema
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.db.models import F
-from .models import VehicleModel
+from .models import VehicleModel, VehicleStatusChoices
 from .serializers import VehicleSerializer, VehicleAvailabilitySerializer
 from drf_yasg import openapi
 
@@ -28,7 +28,7 @@ class VehicleViewSet(viewsets.ModelViewSet):
         Overriding the default `get_queryset` to handle filtering based on user role.
         """
         if self.request.user.role == UserChoice.CLIENT and self.request.user.is_authenticated:
-            return VehicleModel.objects.filter(is_available=True)
+            return VehicleModel.objects.filter(status=VehicleStatusChoices.AVAILABLE)
         elif self.request.user.role == UserChoice.MANAGER and self.request.user.is_authenticated:
             return VehicleModel.objects.all()
         return VehicleModel.objects.none()
