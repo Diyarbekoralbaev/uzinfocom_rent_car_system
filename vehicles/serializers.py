@@ -1,33 +1,31 @@
 from rest_framework import serializers
-from .models import VehicleModel
+from .models import VehicleModel, VehicleStatusChoices
+
 
 class VehicleSerializer(serializers.ModelSerializer):
     class Meta:
         model = VehicleModel
-        fields = '__all__'
+        fields = [
+            'id',
+            'brand',
+            'model',
+            'daily_price',
+            'status',
+            'current_station',
+            'created_at',
+            'updated_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at']
         extra_kwargs = {
-            'id': {'read_only': True},
-            'current_station': {'required': False},
+            'current_station': {'required': False, 'allow_null': True},
+            'status': {'required': False},
         }
-
-    def validate(self, data):
-        data = super().validate(data)
-        return data
-
-    def create(self, validated_data):
-        vehicle = VehicleModel.objects.create(**validated_data)
-        return vehicle
 
 
 class VehicleAvailabilitySerializer(serializers.ModelSerializer):
+    status = serializers.ChoiceField(choices=VehicleStatusChoices.choices)
+
     class Meta:
         model = VehicleModel
-        fields = ('id', 'status')
-        extra_kwargs = {
-            'id': {'read_only': True},
-            'status': {'required': True},
-        }
-
-    def validate(self, data):
-        data = super().validate(data)
-        return data
+        fields = ['id', 'status']
+        read_only_fields = ['id']
