@@ -12,7 +12,7 @@ from rest_framework.response import Response
 
 from stations.models import StationModel
 from vehicles.models import VehicleModel, VehicleStatusChoices
-from .models import RentalModel, ReservationModel, RentalStatusChoices
+from .models import RentalModel, ReservationModel, RentalStatusChoices, ReservationStatusChoices
 from users.models import UserChoice
 from .serializers import RentalSerializer, ReservationSerializer
 from .utils import is_near_station
@@ -42,9 +42,9 @@ class RentalViewSet(viewsets.ModelViewSet):
             rentals = RentalModel.objects.filter(client=request.user, status='ACTIVE')
             if rentals.exists():
                 return Response({"error": "You already have an active rental"}, status=status.HTTP_400_BAD_REQUEST)
-            reservations = ReservationModel.objects.filter(client=request.user, status='CONFIRMED')
-            if reservations.exists():
-                return Response({"error": "You already have an active reservation"}, status=status.HTTP_400_BAD_REQUEST)
+            # reservations = ReservationModel.objects.filter(client=request.user, status='CONFIRMED')
+            # if reservations.exists():
+            #     return Response({"error": "You already have an active reservation"}, status=status.HTTP_400_BAD_REQUEST)
             else:
                 user = request.user
                 vehicle = VehicleModel.objects.get(id=request.data['car'])
@@ -191,3 +191,97 @@ class RentalViewSet(viewsets.ModelViewSet):
             return Response({"error": "No active rental found"}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"error": "You do not have permission to return a car to station"},
                         status=status.HTTP_403_FORBIDDEN)
+
+
+@method_decorator(gzip_page, name='dispatch')
+class ReservationViewSet(viewsets.ModelViewSet):
+    """
+    A viewset for viewing and editing reservation instances.
+    """
+    serializer_class = ReservationSerializer
+    permission_classes = [IsAuthenticated]
+    queryset = ReservationModel.objects.all()
+    http_method_names = ['get', 'post']
+
+    def get_queryset(self):
+        """
+        Overriding the default `get_queryset` to handle filtering based on user role.
+        """
+        if self.request.user.is_authenticated and self.request.user.role == UserChoice.CLIENT:
+            return ReservationModel.objects.filter(client=self.request.user)
+        elif self.request.user.is_authenticated and self.request.user.role == UserChoice.MANAGER:
+            return ReservationModel.objects.all()
+        return ReservationModel.objects.none()
+
+    def create(self, request, *args, **kwargs):
+        user = request.user
+        vehicle = VehicleModel.objects.get(id=request.data['car'])
+        if ReservationModel.objects.filter(client=user, car=vehicle, status=ReservationStatusChoices.CONFIRMED).exists() or ReservationModel.objects.filter(client=user, car=vehicle, status=ReservationStatusChoices.PENDING).exists():
+            return Response({"error": "You already have a reservation for this car. Please wait for the manager to confirm or cancel it."}, status=status.HTTP_400_BAD_REQUEST)
+        # check for exiting reservation or rental in the same time
+        start_date = request.data['start_date']
+        end_date = request.data['end_date']
+        if ReservationModel.objects.filter(car=vehicle, start_date__lte=end_date, end_date__gte=start_date, status='CONFIRMED').exists():
+            return Response({"error": "This car is already reserved in this time period. Please choose another car or time period."}, status=status.HTTP_400_BAD_REQUEST)
+        if RentalModel.objects.filter(car=vehicle, start_date__lte=end_date, end_date__gte=start_date, status='ACTIVE').exists():
+            return Response({"error": "This car is already rented in this time period. Please choose another car or time period."}, status=status.HTTP_400_BAD_REQUEST)
+        # no need charge for reservation now. charge will be done when rental is created
+        request.data['client'] = user.id
+        request.data['status'] = ReservationStatusChoices.PENDING
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        """
+        Update not allowed for reservations
+        """
+        return Response({"error": "Update not allowed for reservations"}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def partial_update(self, request, *args, **kwargs):
+        """
+        Partial update not allowed for reservations
+        """
+        return Response({"error": "Partial update not allowed for reservations"}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def destroy(self, request, *args, **kwargs):
+        """
+        Delete not allowed for reservations
+        """
+        return Response({"error": "Delete not allowed for reservations"}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    @swagger_auto_schema(
+        methods=['post'],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'status': openapi.Schema(type=openapi.TYPE_STRING),
+            }
+        ),
+        responses={200: openapi.Schema(type=openapi.TYPE_OBJECT)}
+    )
+    @action(detail=True, methods=['post'], url_path='set-status', permission_classes=[IsAuthenticated])
+    def set_status(self, request, pk=None):
+        user = request.user
+        if user.role == UserChoice.MANAGER:
+            reservation = self.get_object()
+            serializer = ReservationSerializer(reservation, data=request.data, partial=True)
+            if serializer.is_valid():
+                reservation = serializer.save()
+                return Response(serializer.data, status=status.HTTP_200_OK)
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "You do not have permission to set status of a reservation"}, status=status.HTTP_403_FORBIDDEN)
+
+    @swagger_auto_schema(
+        methods=['post'],
+        responses={200: openapi.Schema(type=openapi.TYPE_OBJECT)}
+    )
+    @action(detail=True, methods=['post'], url_path='cancel', permission_classes=[IsAuthenticated])
+    def cancel(self, request, pk=None):
+        user = request.user
+        reservation = self.get_object()
+        if user.role == UserChoice.CLIENT:
+            if reservation.status == ReservationStatusChoices.PENDING or reservation.status == ReservationStatusChoices.CONFIRMED:
+                reservation.status = ReservationStatusChoices.CANCELLED
+                reservation.save()
+                return Response({"message": "Reservation cancelled successfully"}, status=status.HTTP_200_OK)
+            return Response({"error": "You cannot cancel a reservation that is already cancelled"}, status=status.HTTP_400_BAD_REQUEST)
+        return Response({"error": "Manager cannot cancel a reservation from a client. Please use set-status endpoint."}, status=status.HTTP_403_FORBIDDEN)
