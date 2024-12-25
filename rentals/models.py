@@ -6,6 +6,11 @@ class RentalStatusChoices(models.TextChoices):
     COMPLETED = 'COMPLETED', 'Completed'
     CANCELLED = 'CANCELLED', 'Cancelled'
 
+class ReservationStatusChoices(models.TextChoices):
+    PENDING = 'PENDING', 'Pending'
+    CONFIRMED = 'CONFIRMED', 'Confirmed'
+    CANCELLED = 'CANCELLED', 'Cancelled'
+
 class RentalModel(models.Model):
     client = models.ForeignKey('users.UserModel', on_delete=models.CASCADE, related_name='rentals')
     car = models.ForeignKey('vehicles.VehicleModel', on_delete=models.CASCADE)
@@ -28,15 +33,9 @@ class RentalModel(models.Model):
 class ReservationModel(models.Model):
     client = models.ForeignKey('users.UserModel', on_delete=models.CASCADE)
     car = models.ForeignKey('vehicles.VehicleModel', on_delete=models.CASCADE)
-    pickup_station = models.ForeignKey('stations.StationModel', on_delete=models.CASCADE, related_name='reservations')
-    return_station = models.ForeignKey('stations.StationModel', on_delete=models.CASCADE)
     start_date = models.DateTimeField()
     end_date = models.DateTimeField()
-    status = models.CharField(max_length=20, choices=[
-        ('PENDING', 'Pending'),
-        ('CONFIRMED', 'Confirmed'),
-        ('CANCELLED', 'Cancelled')
-    ])
+    status = models.CharField(max_length=20, choices=ReservationStatusChoices.choices, default=ReservationStatusChoices.PENDING)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
