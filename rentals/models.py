@@ -1,10 +1,16 @@
 from django.db import models
 
+from stations.models import StationModel
+from users.models import UserModel
+from vehicles.models import VehicleModel
+
+
 class RentalStatusChoices(models.TextChoices):
     PENDING = 'PENDING', 'Pending'
     ACTIVE = 'ACTIVE', 'Active'
     COMPLETED = 'COMPLETED', 'Completed'
     CANCELLED = 'CANCELLED', 'Cancelled'
+
 
 class ReservationStatusChoices(models.TextChoices):
     PENDING = 'PENDING', 'Pending'
@@ -14,27 +20,37 @@ class ReservationStatusChoices(models.TextChoices):
 
 class RentalModel(models.Model):
     client = models.ForeignKey(
-        'users.UserModel', on_delete=models.CASCADE, related_name='rentals'
+        UserModel, on_delete=models.CASCADE, related_name='rentals', db_index=True
     )
     car = models.ForeignKey(
-        'vehicles.VehicleModel', on_delete=models.CASCADE
+        VehicleModel, on_delete=models.CASCADE, related_name='rentals', db_index=True
     )
     pickup_station = models.ForeignKey(
-        'stations.StationModel', on_delete=models.CASCADE, related_name='pickups',
-        null=True, blank=True
+        StationModel,
+        on_delete=models.CASCADE,
+        related_name='pickups',
+        null=True,
+        blank=True,
+        db_index=True
     )
     return_station = models.ForeignKey(
-        'stations.StationModel', on_delete=models.CASCADE, related_name='returns',
-        null=True, blank=True
+        StationModel,
+        on_delete=models.CASCADE,
+        related_name='returns',
+        null=True,
+        blank=True,
+        db_index=True
     )
-    start_date = models.DateTimeField()
-    end_date = models.DateTimeField(null=True, blank=True)
-    total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    start_date = models.DateTimeField(db_index=True)
+    end_date = models.DateTimeField(null=True, blank=True, db_index=True)
+    total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0, db_index=True)
     status = models.CharField(
-        max_length=20, choices=RentalStatusChoices.choices,
-        default=RentalStatusChoices.PENDING
+        max_length=20,
+        choices=RentalStatusChoices.choices,
+        default=RentalStatusChoices.PENDING,
+        db_index=True
     )
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -59,18 +75,31 @@ class RentalModel(models.Model):
         return new_status in valid_transitions.get(self.status, [])
 
 
-
 class ReservationModel(models.Model):
-    client = models.ForeignKey('users.UserModel', on_delete=models.CASCADE)
-    car = models.ForeignKey('vehicles.VehicleModel', on_delete=models.CASCADE)
-    start_date = models.DateTimeField()
-    end_date = models.DateTimeField()
-    status = models.CharField(max_length=20, choices=ReservationStatusChoices.choices, default=ReservationStatusChoices.PENDING)
-    created_at = models.DateTimeField(auto_now_add=True)
+    client = models.ForeignKey(
+        UserModel, on_delete=models.CASCADE, related_name='reservations', db_index=True
+    )
+    car = models.ForeignKey(
+        VehicleModel, on_delete=models.CASCADE, related_name='reservations', db_index=True
+    )
+    start_date = models.DateTimeField(db_index=True)
+    end_date = models.DateTimeField(db_index=True)
+    status = models.CharField(
+        max_length=20,
+        choices=ReservationStatusChoices.choices,
+        default=ReservationStatusChoices.PENDING,
+        db_index=True
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['client', 'car', 'status']),
+            models.Index(fields=['car', 'start_date', 'end_date']),
+            models.Index(fields=['status']),
+        ]
 
     def __str__(self):
         return f"Reservation {self.id} - {self.client.username} - {self.car}"
