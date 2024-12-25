@@ -1,5 +1,6 @@
 from math import radians, sin, cos, sqrt, atan2
 from django.conf import settings
+from django.core.mail import send_mail
 
 def calculate_distance(lat1, lon1, lat2, lon2):
     R = 6378  # Radius of the Earth in kilometers
@@ -20,3 +21,7 @@ def calculate_distance(lat1, lon1, lat2, lon2):
 def is_near_station(user_lat, user_lon, station_lat, station_lon, max_distance=settings.MAX_DISTANCE):
     distance = calculate_distance(user_lat, user_lon, station_lat, station_lon)
     return distance <= max_distance
+
+
+def send_email(subject, to_email, message):
+    send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [to_email])
