@@ -13,7 +13,7 @@ from django.db.models import F
 from .models import VehicleModel, VehicleStatusChoices
 from .serializers import VehicleSerializer, VehicleAvailabilitySerializer
 from drf_yasg import openapi
-from .permissions import IsManager, IsAuthenticatedClientOrManager
+from common.permissions import IsManager, IsAuthenticatedClientOrManager
 
 @method_decorator(gzip_page, name='dispatch')
 class VehicleViewSet(viewsets.ModelViewSet):

@@ -10,7 +10,7 @@ from drf_yasg import openapi
 from users.models import UserChoice
 from .models import StationModel
 from .serializers import StationSerializer
-from .permissions import IsManager, IsAuthenticatedClientOrManager
+from common.permissions import IsManager, IsAuthenticatedClientOrManager
 
 @method_decorator(gzip_page, name='dispatch')
 class StationViewSet(viewsets.ModelViewSet):

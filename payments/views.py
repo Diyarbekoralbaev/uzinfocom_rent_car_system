@@ -6,7 +6,7 @@ from rest_framework import viewsets
 
 from users.models import UserChoice
 from .models import PaymentModel
-from .permissions import IsAuthenticatedClientOrManager
+from common.permissions import IsAuthenticatedClientOrManager
 from .serializers import PaymentSerializer
 from .utils import send_payment_email
 
