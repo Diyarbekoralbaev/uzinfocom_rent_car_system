@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from django.db import transaction
 from django.views.decorators.gzip import gzip_page
 from drf_yasg import openapi
@@ -70,22 +72,44 @@ class RentalViewSet(viewsets.ModelViewSet):
                 if rental.status == RentalStatusChoices.ACTIVE:
                     return Response({"error": "You cannot cancel an active rental. Please return the car to the station and set status to completed."}, status=status.HTTP_400_BAD_REQUEST)
                 return super().update(request, *args, **kwargs)
-            if request.data.get('start_date') or request.data.get('end_date'):
-                if request.data.get('start_date'):
-                    start_date = request.data.get('start_date')
-                else:
-                    start_date = rental.start_date
-                if request.data.get('end_date'):
-                    end_date = request.data.get('end_date')
-                else:
-                    end_date = rental.end_date
-                total_amount = rental.car.daily_price * (end_date - start_date).days
-                if user.balance < total_amount:
-                    return Response({"error": "Insufficient balance to update rental"}, status=status.HTTP_400_BAD_REQUEST)
-                user.balance -= total_amount
-                user.save()
-                request.data['total_amount'] = total_amount
-            return super().update(request, *args, **kwargs)
+            # Handle date updates
+            if 'start_date' in request.data or 'end_date' in request.data:
+                start_date = request.data.get('start_date', rental.start_date)
+                end_date = request.data.get('end_date', rental.end_date)
+
+                try:
+                    # Parse dates if they are strings
+                    if isinstance(start_date, str):
+                        start_date = datetime.fromisoformat(start_date)
+                    if isinstance(end_date, str):
+                        end_date = datetime.fromisoformat(end_date)
+
+                    # Validate date logic
+                    if start_date >= end_date:
+                        return Response({"error": "Start date must be before end date"},
+                                        status=status.HTTP_400_BAD_REQUEST)
+
+                    # Calculate new total based on updated dates
+                    new_total_amount = rental.car.daily_price * (end_date - start_date).days
+
+                    # Calculate the difference from the already charged amount
+                    amount_difference = new_total_amount - rental.total_amount
+
+                    # Check and update user balance
+                    if amount_difference > 0:  # New total is higher, charge the user
+                        if user.balance < amount_difference:
+                            return Response({"error": "Insufficient balance to update rental"},
+                                            status=status.HTTP_400_BAD_REQUEST)
+                        user.balance -= amount_difference
+                    elif amount_difference < 0:  # New total is lower, refund the user
+                        user.balance += abs(amount_difference)
+
+                    # Save the updated balance and proceed
+                    user.save()
+                    request.data['total_amount'] = new_total_amount
+
+                except ValueError:
+                    return Response({"error": "Invalid date format provided"}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"error": "You do not have permission to update a rental"}, status=status.HTTP_403_FORBIDDEN)
 
     def partial_update(self, request, *args, **kwargs):
