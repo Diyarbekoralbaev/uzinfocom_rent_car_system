@@ -61,11 +61,17 @@ class VehicleViewSet(viewsets.ModelViewSet):
         operation_id="Set vehicle availability",
         operation_summary="Set vehicle availability",
         operation_description="Set the availability of a vehicle",
-        request_body=VehicleAvailabilitySerializer,
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'status': openapi.Schema(type=openapi.TYPE_STRING, description='Vehicle status',
+                                         enum=['AVAILABLE', 'RENTED', 'MAINTENANCE'])
+            }
+        ),
         responses={200: VehicleAvailabilitySerializer()}
     )
-    @action(detail=True, methods=['patch'], url_path='set-availability', permission_classes=[IsAuthenticated])
-    def set_availability(self, request, pk=None):
+    @action(detail=True, methods=['post'], url_path='set-status', permission_classes=[IsAuthenticated])
+    def set_status(self, request, pk=None):
         user = request.user
         if user.role == UserChoice.MANAGER:
             vehicle = self.get_object()
