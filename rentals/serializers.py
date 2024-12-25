@@ -61,7 +61,7 @@ class RentalSerializer(serializers.ModelSerializer):
 class ReservationSerializer(serializers.ModelSerializer):
     class Meta:
         model = ReservationModel
-        fields = ['id', 'client', 'car', 'pickup_station', 'return_station', 'start_date', 'end_date', 'status', 'created_at', 'updated_at']
+        fields = ['id', 'client', 'car', 'start_date', 'end_date', 'status', 'created_at', 'updated_at']
         extra_kwargs = {
             'id': {'read_only': True},
             'client': {'read_only': True},
@@ -81,18 +81,6 @@ class ReservationSerializer(serializers.ModelSerializer):
     def validate_car(self, value):
         if not value.status == VehicleStatusChoices.AVAILABLE:
             raise serializers.ValidationError("Vehicle is not available.")
-        return value
-
-    def validate_pickup_station(self, value):
-        station = StationModel.objects.get(id=value.id)
-        if not station or not station.is_active:
-            raise serializers.ValidationError("Station not found or not active.")
-        return value
-
-    def validate_return_station(self, value):
-        station = StationModel.objects.get(id=value.id)
-        if not station or not station.is_active:
-            raise serializers.ValidationError("Station not found or not active.")
         return value
 
     def validate(self, data):
