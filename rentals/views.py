@@ -15,7 +15,7 @@ from vehicles.models import VehicleModel, VehicleStatusChoices
 from .models import RentalModel, ReservationModel, RentalStatusChoices, ReservationStatusChoices
 from users.models import UserChoice, UserModel
 from .serializers import RentalSerializer, ReservationSerializer
-from .utils import is_near_station
+from .utils import is_near_station, send_email
 from django.db.models import F
 
 @method_decorator(gzip_page, name='dispatch')
@@ -91,7 +91,11 @@ class RentalViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=data)
         serializer.is_valid(raise_exception=True)
         rental = serializer.save()
-
+        send_email(
+            subject="Rental Request",
+            to_email=user.email,
+            message=f"Your rental request for {vehicle} has been received. Please wait for manager approval."
+        )
         return Response(RentalSerializer(rental).data, status=status.HTTP_201_CREATED)
 
     @transaction.atomic
@@ -192,6 +196,12 @@ class RentalViewSet(viewsets.ModelViewSet):
 
                 return Response(RentalSerializer(rental).data, status=status.HTTP_200_OK)
 
+            send_email(
+                subject="Rental Request Updated",
+                to_email=user.email,
+                message=f"Your rental request for {rental.car} has been updated. Please wait for manager approval.."
+            )
+
             # If the client wants to do a PUT that changes something else (e.g. pickup_station)
             # you could handle that or just call super().update().
             return super().update(request, *args, **kwargs)
@@ -202,6 +212,11 @@ class RentalViewSet(viewsets.ModelViewSet):
             You could replicate some or all logic from above,
             or simply call super().update().
             """
+            send_email(
+                subject="Rental Request Updated",
+                to_email=rental.client.email,
+                message=f"Your rental request for {rental.car} has been updated by the manager. Please check your account."
+            )
             return super().update(request, *args, **kwargs)
 
         # If neither client nor manager
@@ -222,6 +237,11 @@ class RentalViewSet(viewsets.ModelViewSet):
             return Response({"error": "You do not have permission to update this rental."},
                             status=status.HTTP_403_FORBIDDEN)
 
+        send_email(
+            subject="Rental Request Updated",
+            to_email=rental.client.email,
+            message=f"Your rental request for {rental.car} has been updated. Please check your account."
+        )
         # Optionally, replicate date checks or allow partial fields
         return super().partial_update(request, *args, **kwargs)
 
@@ -233,6 +253,11 @@ class RentalViewSet(viewsets.ModelViewSet):
             if rental.status != RentalStatusChoices.PENDING:
                 return Response({"error": "You can only delete rentals that are pending."},
                                 status=status.HTTP_400_BAD_REQUEST)
+            send_email(
+                subject="Rental Request Cancelled",
+                to_email=user.email,
+                message=f"Your rental request for {rental.car} has been cancelled."
+            )
             return super().destroy(request, *args, **kwargs)
         return Response({"error": "You do not have permission to delete a rental"}, status=status.HTTP_403_FORBIDDEN)
 
@@ -304,6 +329,11 @@ class RentalViewSet(viewsets.ModelViewSet):
                 vehicle.status = VehicleStatusChoices.AVAILABLE
             vehicle.save()
 
+            send_email(
+                subject="Rental Status Updated",
+                to_email=rental.client.email,
+                message=f"Your rental status for {rental.car} has been updated to {new_status}."
+            )
             return Response({"status": rental.status}, status=status.HTTP_200_OK)
 
     @swagger_auto_schema(
@@ -358,6 +388,12 @@ class RentalViewSet(viewsets.ModelViewSet):
             vehicle.current_station = station
             vehicle.save()
 
+        send_email(
+            subject="Car Returned",
+            to_email=user.email,
+            message=f"Your rental for {vehicle} has been completed. Thank you for using our service."
+        )
+
         return Response({"message": "Car returned to station successfully."}, status=status.HTTP_200_OK)
 @method_decorator(gzip_page, name='dispatch')
 class ReservationViewSet(viewsets.ModelViewSet):
@@ -373,56 +409,90 @@ class ReservationViewSet(viewsets.ModelViewSet):
         """
         Overriding the default `get_queryset` to handle filtering based on user role.
         """
-        if self.request.user.is_authenticated and self.request.user.role == UserChoice.CLIENT:
-            return ReservationModel.objects.filter(client=self.request.user)
-        elif self.request.user.is_authenticated and self.request.user.role == UserChoice.MANAGER:
+        user = self.request.user
+        if user.is_authenticated and user.role == UserChoice.CLIENT:
+            return ReservationModel.objects.filter(client=user)
+        elif user.is_authenticated and user.role == UserChoice.MANAGER:
             return ReservationModel.objects.all()
         return ReservationModel.objects.none()
 
     def create(self, request, *args, **kwargs):
-        user = request.user
-        vehicle_id = request.data['car']
-        start_date = request.data['start_date']
-        end_date = request.data['end_date']
         with transaction.atomic():
+            user = request.user
+            vehicle_id = request.data['car']
+            start_date = request.data['start_date']
+            end_date = request.data['end_date']
+
             vehicle = VehicleModel.objects.select_for_update().get(id=vehicle_id)
-            if ReservationModel.objects.filter(client=user, car=vehicle, status__in=[ReservationStatusChoices.PENDING, ReservationStatusChoices.CONFIRMED]).exists():
-                return Response({"error": "You already have a reservation for this car. Please wait for the manager to confirm or cancel it."}, status=status.HTTP_400_BAD_REQUEST)
-            # check for exiting reservation or rental in the same time
+
+            # Check if the user already has a PENDING or CONFIRMED reservation
             if ReservationModel.objects.filter(
-                    client=user,
-                    car=vehicle,
-                    status__in=[ReservationStatusChoices.PENDING, ReservationStatusChoices.CONFIRMED],
-                    start_date__lte=end_date,
-                    end_date__gte=start_date
+                client=user,
+                car=vehicle,
+                status__in=[ReservationStatusChoices.PENDING, ReservationStatusChoices.CONFIRMED]
+            ).exists():
+                return Response({
+                    "error": "You already have a reservation for this car. "
+                             "Please wait for the manager to confirm or cancel it."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # Check for an overlapping reservation for the same user & car
+            if ReservationModel.objects.filter(
+                client=user,
+                car=vehicle,
+                status__in=[ReservationStatusChoices.PENDING, ReservationStatusChoices.CONFIRMED],
+                start_date__lte=end_date,
+                end_date__gte=start_date
             ).exists():
                 return Response(
                     {"error": "You already have an overlapping reservation for this car."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
-            if RentalModel.objects.filter(car=vehicle, start_date__lte=end_date, end_date__gte=start_date, status='ACTIVE').exists():
-                return Response({"error": "This car is already rented in this time period. Please choose another car or time period."}, status=status.HTTP_400_BAD_REQUEST)
-            # no need charge for reservation now. charge will be done when rental is created
+
+            # Check for an active rental that conflicts with this reservation
+            # (In your code, you do something like `RentalModel.objects.filter(car=vehicle, ...)`)
+            # We'll assume you import RentalModel from .models or rentals.models
+            from rentals.models import RentalModel, RentalStatusChoices
+
+            if RentalModel.objects.filter(
+                car=vehicle,
+                status=RentalStatusChoices.ACTIVE,
+                start_date__lte=end_date,
+                end_date__gte=start_date
+            ).exists():
+                return Response({
+                    "error": "This car is already rented in this time period. "
+                             "Please choose another car or time period."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # No charge for reservation right now; it will be charged on rental creation
             request.data['client'] = user.id
             request.data['status'] = ReservationStatusChoices.PENDING
-            return super().create(request, *args, **kwargs)
+
+            response = super().create(request, *args, **kwargs)
+
+            # If creation succeeded, send email
+            if response.status_code == status.HTTP_201_CREATED:
+                # You can get the newly created object from response.data['id'] if needed
+                send_email(
+                    subject="Reservation Request",
+                    to_email=user.email,
+                    message=f"Your reservation request for {vehicle} has been received. "
+                            "Please wait for manager approval."
+                )
+
+            return response
 
     def update(self, request, *args, **kwargs):
-        """
-        Update not allowed for reservations
-        """
+        """Update not allowed for reservations."""
         return Response({"error": "Update not allowed for reservations"}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
     def partial_update(self, request, *args, **kwargs):
-        """
-        Partial update not allowed for reservations
-        """
+        """Partial update not allowed for reservations."""
         return Response({"error": "Partial update not allowed for reservations"}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
     def destroy(self, request, *args, **kwargs):
-        """
-        Delete not allowed for reservations
-        """
+        """Delete not allowed for reservations."""
         return Response({"error": "Delete not allowed for reservations"}, status=status.HTTP_405_METHOD_NOT_ALLOWED)
 
     @swagger_auto_schema(
@@ -437,15 +507,84 @@ class ReservationViewSet(viewsets.ModelViewSet):
     )
     @action(detail=True, methods=['post'], url_path='set-status', permission_classes=[IsAuthenticated])
     def set_status(self, request, pk=None):
-        user = request.user
-        if user.role == UserChoice.MANAGER:
-            reservation = self.get_object()
-            serializer = ReservationSerializer(reservation, data=request.data, partial=True)
-            if serializer.is_valid():
-                reservation = serializer.save()
-                return Response(serializer.data, status=status.HTTP_200_OK)
-            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-        return Response({"error": "You do not have permission to set status of a reservation"}, status=status.HTTP_403_FORBIDDEN)
+        """
+        Manager can set a reservation's status to CONFIRMED, CANCELLED, etc.
+        We do concurrency checks and also verify that if the manager is setting
+        this reservation to CONFIRMED, there's no conflict with active rentals
+        or other confirmed reservations.
+        """
+        with transaction.atomic():
+            user = request.user
+            if user.role != UserChoice.MANAGER:
+                return Response({"error": "You do not have permission to set status of a reservation"},
+                                status=status.HTTP_403_FORBIDDEN)
+
+            # Lock this reservation row
+            reservation = ReservationModel.objects.select_for_update().get(pk=pk)
+            new_status = request.data.get('status')
+
+            # Optionally, define valid transitions
+            # e.g., from PENDING -> CONFIRMED, PENDING -> CANCELLED, CONFIRMED -> CANCELLED
+            # but not CANCELLED -> CONFIRMED. We'll do a simple check example:
+            if reservation.status == ReservationStatusChoices.CANCELLED:
+                # If already cancelled, don't allow reactivation
+                return Response({
+                    "error": "Cannot change status of a cancelled reservation."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            if reservation.status == ReservationStatusChoices.CONFIRMED and new_status == ReservationStatusChoices.PENDING:
+                return Response({
+                    "error": "Cannot revert a confirmed reservation back to pending."
+                }, status=status.HTTP_400_BAD_REQUEST)
+
+            # If new_status is something unexpected
+            valid_statuses = [ReservationStatusChoices.PENDING,
+                              ReservationStatusChoices.CONFIRMED,
+                              ReservationStatusChoices.CANCELLED]
+            if new_status not in valid_statuses:
+                return Response({"error": "Invalid status."}, status=status.HTTP_400_BAD_REQUEST)
+
+            # If manager is confirming the reservation, check for conflicts
+            if new_status == ReservationStatusChoices.CONFIRMED:
+                # Make sure there's no active rental overlap for the same car/time
+                from rentals.models import RentalModel, RentalStatusChoices
+
+                if RentalModel.objects.filter(
+                    car=reservation.car,
+                    status=RentalStatusChoices.ACTIVE,
+                    start_date__lte=reservation.end_date,
+                    end_date__gte=reservation.start_date
+                ).exists():
+                    return Response({"error": "This car is currently rented during that period. Cannot confirm."},
+                                    status=status.HTTP_400_BAD_REQUEST)
+
+                # Also ensure no other confirmed reservation overlaps
+                if ReservationModel.objects.filter(
+                    car=reservation.car,
+                    status=ReservationStatusChoices.CONFIRMED,
+                    start_date__lte=reservation.end_date,
+                    end_date__gte=reservation.start_date
+                ).exclude(pk=reservation.pk).exists():
+                    return Response({"error": "Another confirmed reservation overlaps this period."},
+                                    status=status.HTTP_400_BAD_REQUEST)
+
+            # If manager is cancelling the reservation, it's straightforward: just set CANCELLED
+            if new_status == ReservationStatusChoices.CANCELLED:
+                # No special concurrency check needed, but you can add logic if needed
+                pass
+
+            # Save changes
+            reservation.status = new_status
+            reservation.save()
+
+            # Optionally send email to the user
+            send_email(
+                subject="Reservation Status Updated",
+                to_email=reservation.client.email,
+                message=f"Your reservation for {reservation.car} is now {new_status}."
+            )
+
+            return Response({"status": reservation.status}, status=status.HTTP_200_OK)
 
     @swagger_auto_schema(
         methods=['post'],
@@ -453,12 +592,30 @@ class ReservationViewSet(viewsets.ModelViewSet):
     )
     @action(detail=True, methods=['post'], url_path='cancel', permission_classes=[IsAuthenticated])
     def cancel(self, request, pk=None):
-        user = request.user
-        reservation = self.get_object()
-        if user.role == UserChoice.CLIENT:
-            if reservation.status == ReservationStatusChoices.PENDING or reservation.status == ReservationStatusChoices.CONFIRMED:
+        """
+        Clients can cancel their reservation if it's still PENDING or CONFIRMED.
+        """
+        with transaction.atomic():
+            user = request.user
+            reservation = ReservationModel.objects.select_for_update().get(pk=pk)
+
+            # Only clients can cancel their own reservation
+            if user.role != UserChoice.CLIENT or reservation.client != user:
+                return Response({
+                    "error": "You do not have permission to cancel this reservation."
+                }, status=status.HTTP_403_FORBIDDEN)
+
+            # If the reservation is PENDING or CONFIRMED, allow cancellation
+            if reservation.status in [ReservationStatusChoices.PENDING, ReservationStatusChoices.CONFIRMED]:
                 reservation.status = ReservationStatusChoices.CANCELLED
                 reservation.save()
+
+                send_email(
+                    subject="Reservation Cancelled",
+                    to_email=user.email,
+                    message=f"Your reservation for {reservation.car} has been cancelled."
+                )
                 return Response({"message": "Reservation cancelled successfully"}, status=status.HTTP_200_OK)
-            return Response({"error": "You cannot cancel a reservation that is already cancelled"}, status=status.HTTP_400_BAD_REQUEST)
-        return Response({"error": "Manager cannot cancel a reservation from a client. Please use set-status endpoint."}, status=status.HTTP_403_FORBIDDEN)
+
+            return Response({"error": f"You cannot cancel a reservation that is already {reservation.status}."},
+                            status=status.HTTP_400_BAD_REQUEST)
