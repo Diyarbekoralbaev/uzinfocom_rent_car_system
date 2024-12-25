@@ -29,6 +29,16 @@ class RentalModel(models.Model):
     def __str__(self):
         return f"Rental {self.id} - {self.client.username} - {self.car}"
 
+    def can_transition_to(self, new_status):
+        valid_transitions = {
+            RentalStatusChoices.PENDING: [RentalStatusChoices.ACTIVE, RentalStatusChoices.CANCELLED],
+            RentalStatusChoices.ACTIVE: [RentalStatusChoices.COMPLETED, RentalStatusChoices.CANCELLED],
+            RentalStatusChoices.COMPLETED: [],
+            RentalStatusChoices.CANCELLED: []
+        }
+        return new_status in valid_transitions.get(self.status, [])
+
+
 
 class ReservationModel(models.Model):
     client = models.ForeignKey('users.UserModel', on_delete=models.CASCADE)
