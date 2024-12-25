@@ -11,20 +11,40 @@ class ReservationStatusChoices(models.TextChoices):
     CONFIRMED = 'CONFIRMED', 'Confirmed'
     CANCELLED = 'CANCELLED', 'Cancelled'
 
+
 class RentalModel(models.Model):
-    client = models.ForeignKey('users.UserModel', on_delete=models.CASCADE, related_name='rentals')
-    car = models.ForeignKey('vehicles.VehicleModel', on_delete=models.CASCADE)
-    pickup_station = models.ForeignKey('stations.StationModel', on_delete=models.CASCADE, related_name='pickups', null=True, blank=True)
-    return_station = models.ForeignKey('stations.StationModel', on_delete=models.CASCADE, related_name='returns', null=True, blank=True)
+    client = models.ForeignKey(
+        'users.UserModel', on_delete=models.CASCADE, related_name='rentals'
+    )
+    car = models.ForeignKey(
+        'vehicles.VehicleModel', on_delete=models.CASCADE
+    )
+    pickup_station = models.ForeignKey(
+        'stations.StationModel', on_delete=models.CASCADE, related_name='pickups',
+        null=True, blank=True
+    )
+    return_station = models.ForeignKey(
+        'stations.StationModel', on_delete=models.CASCADE, related_name='returns',
+        null=True, blank=True
+    )
     start_date = models.DateTimeField()
     end_date = models.DateTimeField(null=True, blank=True)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0)
-    status = models.CharField(max_length=20, choices=RentalStatusChoices.choices, default=RentalStatusChoices.PENDING)
+    status = models.CharField(
+        max_length=20, choices=RentalStatusChoices.choices,
+        default=RentalStatusChoices.PENDING
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['client', 'status']),
+            models.Index(fields=['car', 'status']),
+            models.Index(fields=['start_date', 'end_date']),
+            models.Index(fields=['status']),
+        ]
 
     def __str__(self):
         return f"Rental {self.id} - {self.client.username} - {self.car}"
