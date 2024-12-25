@@ -1,5 +1,4 @@
 from django.db import transaction
-from django.template.context_processors import request
 from django.views.decorators.gzip import gzip_page
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
@@ -62,7 +61,30 @@ class RentalViewSet(viewsets.ModelViewSet):
 
     def update(self, request, *args, **kwargs):
         user = request.user
+        rental = self.get_object()
         if user.role == UserChoice.CLIENT:
+            if request.data.get('status') == RentalStatusChoices.CANCELLED:
+                if rental.status == RentalStatusChoices.PENDING:
+                    user.balance += rental.total_amount
+                    user.save()
+                if rental.status == RentalStatusChoices.ACTIVE:
+                    return Response({"error": "You cannot cancel an active rental. Please return the car to the station and set status to completed."}, status=status.HTTP_400_BAD_REQUEST)
+                return super().update(request, *args, **kwargs)
+            if request.data.get('start_date') or request.data.get('end_date'):
+                if request.data.get('start_date'):
+                    start_date = request.data.get('start_date')
+                else:
+                    start_date = rental.start_date
+                if request.data.get('end_date'):
+                    end_date = request.data.get('end_date')
+                else:
+                    end_date = rental.end_date
+                total_amount = rental.car.daily_price * (end_date - start_date).days
+                if user.balance < total_amount:
+                    return Response({"error": "Insufficient balance to update rental"}, status=status.HTTP_400_BAD_REQUEST)
+                user.balance -= total_amount
+                user.save()
+                request.data['total_amount'] = total_amount
             return super().update(request, *args, **kwargs)
         return Response({"error": "You do not have permission to update a rental"}, status=status.HTTP_403_FORBIDDEN)
 
