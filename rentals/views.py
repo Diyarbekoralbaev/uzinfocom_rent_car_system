@@ -8,8 +8,9 @@ from rest_framework.permissions import IsAuthenticated
 from django.utils.decorators import method_decorator
 from rest_framework.response import Response
 
-from vehicles.models import VehicleModel
-from .models import RentalModel, ReservationModel
+from stations.models import StationModel
+from vehicles.models import VehicleModel, VehicleStatusChoices
+from .models import RentalModel, ReservationModel, RentalStatusChoices
 from users.models import UserChoice
 from .serializers import RentalSerializer, ReservationSerializer
 
@@ -91,19 +92,42 @@ class RentalViewSet(viewsets.ModelViewSet):
             rental = self.get_object()
             serializer = RentalSerializer(rental, data=request.data, partial=True)
             if serializer.is_valid():
-                serializer.save()
+                rental = serializer.save()
+                vehicle = rental.car
+                if rental.status == RentalStatusChoices.ACTIVE:
+                    vehicle.status = VehicleStatusChoices.RENTED
+                elif rental.status == RentalStatusChoices.COMPLETED or rental.status == RentalStatusChoices.CANCELLED:
+                    vehicle.status = VehicleStatusChoices.AVAILABLE
+                vehicle.save()
                 return Response(serializer.data, status=status.HTTP_200_OK)
             return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
         return Response({"error": "You do not have permission to set status of a rental"}, status=status.HTTP_403_FORBIDDEN)
 
+    @swagger_auto_schema(
+        methods=['get'],
+        request_body=openapi.Schema(
+            type=openapi.TYPE_OBJECT,
+            properties={
+                'return_station': openapi.Schema(type=openapi.TYPE_INTEGER),
+            }
+        ),
+        responses={200: openapi.Schema(type=openapi.TYPE_OBJECT)}
+    )
     @action(detail=False, methods=['get'], url_path='return-car-to-station', permission_classes=[IsAuthenticated])
     def return_car_to_station(self, request):
         user = request.user
         if user.role == UserChoice.CLIENT:
             rental = RentalModel.objects.get(client=user, status='ACTIVE')
+            if not StationModel.objects.filter(id=request.data['return_station']).exists():
+                return Response({"error": "Station not found"}, status=status.HTTP_400_BAD_REQUEST)
             if rental:
                 rental.status = 'COMPLETED'
+                rental.return_station = request.data['return_station']
                 rental.save()
+                vehicle = rental.car
+                vehicle.status = VehicleStatusChoices.AVAILABLE
+                vehicle.current_station = rental.return_station
+                vehicle.save()
                 return Response({"message": "Car returned to station successfully"}, status=status.HTTP_200_OK)
             return Response({"error": "No active rental found"}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"error": "You do not have permission to return a car to station"}, status=status.HTTP_403_FORBIDDEN)
