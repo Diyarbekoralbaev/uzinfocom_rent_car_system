@@ -31,8 +31,3 @@ class VehicleAvailabilitySerializer(serializers.ModelSerializer):
     def validate(self, data):
         data = super().validate(data)
         return data
-
-    def update(self, instance, validated_data):
-        instance.is_available = validated_data.get('status', instance.is_available)
-        instance.save()
-        return instance
