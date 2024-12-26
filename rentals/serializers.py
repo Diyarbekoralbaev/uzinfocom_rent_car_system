@@ -28,15 +28,17 @@ class RentalSerializer(serializers.ModelSerializer):
         """
         Validate date logic:
           - end_date > start_date
-          - start_date >= now() (no renting in the past)
+          - start_date >= now()
         """
         start_date = data.get('start_date')
         end_date = data.get('end_date')
 
-        if start_date >= end_date:
-            raise serializers.ValidationError("End date must be greater than start date.")
-        if start_date < timezone.now():
-            raise serializers.ValidationError("Cannot rent a car in the past.")
+        if start_date is not None and end_date is not None:
+            if start_date >= end_date:
+                raise serializers.ValidationError("End date must be greater than start date.")
+            if start_date < timezone.now():
+                raise serializers.ValidationError("Cannot rent a car in the past.")
+
         return data
 
     def validate_car(self, value):
