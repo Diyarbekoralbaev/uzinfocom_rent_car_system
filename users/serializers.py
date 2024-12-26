@@ -115,23 +115,3 @@ class ResetPasswordConfirmSerializer(serializers.Serializer):
         if new_password is None:
             raise serializers.ValidationError('A new password is required to reset the password.')
         return data
-
-
-class TopUpSerializer(serializers.Serializer):
-    user_id = serializers.IntegerField()
-    amount = serializers.DecimalField(max_digits=10, decimal_places=2)
-
-    def validate(self, data):
-        user_id = data.get('user_id', None)
-        amount = data.get('amount', None)
-        if user_id is None:
-            raise serializers.ValidationError('A user ID is required to top up the balance.')
-        if amount is None:
-            raise serializers.ValidationError('An amount is required to top up the balance.')
-        if amount <= 0:
-            raise serializers.ValidationError('The amount must be greater than 0.')
-        if not UserModel.objects.filter(id=user_id).exists():
-            raise serializers.ValidationError('A user with this ID was not found.')
-        if UserModel.objects.get(id=user_id).role == UserChoice.MANAGER:
-            raise serializers.ValidationError('Managers cannot top up their balance.')
-        return data
