@@ -207,6 +207,8 @@ DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
 SMS_RU_API_ID = os.getenv('SMS_RU_API_ID')
 MAX_DISTANCE = float(os.getenv('MAX_DISTANCE'))
+ESKIZ_EMAIL = os.getenv('ESKIZ_EMAIL')
+ESKIZ_PASSWORD = os.getenv('ESKIZ_PASSWORD')
 
 CELERY_BROKER_URL = f'redis://{os.getenv("REDIS_HOST")}:{os.getenv("REDIS_PORT")}/0'
 CELERY_RESULT_BACKEND = f'redis://{os.getenv("REDIS_HOST")}:{os.getenv("REDIS_PORT")}/0'
