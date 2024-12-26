@@ -9,7 +9,7 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from common.permissions import IsAuthenticatedClientOrManager, IsManager
+from common.permissions import IsRentalOwnerOrManager, IsManager, IsReservationOwnerOrManager, IsClient
 from stations.models import StationModel
 from users.models import UserChoice, UserModel
 from vehicles.models import VehicleModel, VehicleStatusChoices
@@ -24,7 +24,7 @@ class RentalViewSet(viewsets.ModelViewSet):
     A viewset for viewing and editing rental instances.
     """
     serializer_class = RentalSerializer
-    permission_classes = [IsAuthenticatedClientOrManager]
+    permission_classes = [IsRentalOwnerOrManager]
     queryset = RentalModel.objects.select_related('car', 'client', 'pickup_station', 'return_station').all()
 
     def get_queryset(self):
@@ -272,7 +272,7 @@ class RentalViewSet(viewsets.ModelViewSet):
         responses={200: openapi.Schema(type=openapi.TYPE_OBJECT)}
     )
     @action(detail=False, methods=['post'], url_path='return-car-to-station',
-            permission_classes=[IsAuthenticatedClientOrManager])
+            permission_classes=[IsClient])
     def return_car_to_station(self, request):
         """
         Client returns the car to a station, verifying they are physically near the station.
@@ -328,7 +328,7 @@ class ReservationViewSet(viewsets.ModelViewSet):
     A viewset for viewing and editing reservation instances.
     """
     serializer_class = ReservationSerializer
-    permission_classes = [IsAuthenticatedClientOrManager]
+    permission_classes = [IsReservationOwnerOrManager]
     queryset = ReservationModel.objects.select_related('car', 'client').all()
     http_method_names = ['get', 'post']
 
