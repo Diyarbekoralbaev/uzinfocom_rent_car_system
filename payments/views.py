@@ -36,7 +36,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
         """
         with transaction.atomic():
             payment = serializer.save()
-            send_payment_email(payment.user.email, payment.amount)
+            send_payment_email(payment.id)
 
     @swagger_auto_schema(
         operation_id="create_payment",
