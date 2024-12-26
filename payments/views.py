@@ -6,7 +6,7 @@ from rest_framework import viewsets
 
 from users.models import UserChoice
 from .models import PaymentModel
-from common.permissions import IsAuthenticatedClientOrManager
+from common.permissions import IsClient
 from .serializers import PaymentSerializer
 from .utils import send_payment_email
 
@@ -17,7 +17,7 @@ class PaymentViewSet(viewsets.ModelViewSet):
     A ViewSet for handling test payments.
     """
     serializer_class = PaymentSerializer
-    permission_classes = [IsAuthenticatedClientOrManager]
+    permission_classes = [IsClient]
     queryset = PaymentModel.objects.select_related('user').all()
 
     def get_queryset(self):
