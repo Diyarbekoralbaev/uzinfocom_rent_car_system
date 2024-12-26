@@ -12,7 +12,7 @@ from .models import UserModel, UserChoice
 from .serializers import UserSerializer, LoginSerializer, VerifySerializer, ChangePasswordSerializer, \
     ResetPasswordSerializer, ResetPasswordConfirmSerializer, \
     TopUpSerializer
-from .utils import generate_otp
+from .utils import generate_otp, send_sms_otp
 
 
 class RegisterView(APIView):
@@ -48,7 +48,10 @@ class RegisterView(APIView):
                 'otp': otp,
                 'user_id': existing_user.id,
             }, timeout=300)
-
+            try:
+                send_sms_otp(existing_user.phone, otp)
+            except:
+                pass # Ignore if SMS sending fails
             return Response({
                 'verification_id': verification_id,
                 'otp': otp,
@@ -62,7 +65,10 @@ class RegisterView(APIView):
                 'otp': otp,
                 'user_id': user.id,
             }, timeout=300)
-
+            try:
+                send_sms_otp(user.phone, otp)
+            except:
+                pass # Ignore if SMS sending fails
             return Response({
                 'verification_id': verification_id,
                 'otp': otp,
@@ -189,6 +195,10 @@ class ResetPasswordView(APIView):
                 'otp': otp,
                 'user_id': user.id,
             }, timeout=300)
+            try:
+                send_sms_otp(user.phone, otp)
+            except:
+                pass # Ignore if SMS sending fails
             return Response({
                 'verification_id': verification_id,
                 'otp': otp,
