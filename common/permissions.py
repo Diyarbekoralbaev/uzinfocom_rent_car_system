@@ -42,3 +42,84 @@ class IsAuthenticatedClientOrManager(BasePermission):
         if request.user.role == UserChoice.CLIENT and request.method in SAFE_METHODS:
             return True
         return False
+
+
+class IsRentalOwnerOrManager(BasePermission):
+    """
+    Custom permission for RentalModel.
+    - Manager: can do any request
+    - Client: can read (GET, HEAD, OPTIONS) or create (POST) any rental,
+              can PATCH/PUT/DELETE only their own rental
+    """
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user.is_authenticated:
+            return False
+
+        # Managers have full access
+        if user.role == UserChoice.MANAGER:
+            return True
+
+        # Clients can read or create
+        if user.role == UserChoice.CLIENT:
+            if request.method in SAFE_METHODS:  # GET, HEAD, OPTIONS
+                return True
+            if request.method == 'POST':        # create
+                return True
+            # For PATCH/PUT/DELETE, must pass the object-level check
+            if request.method in ['PATCH', 'PUT', 'DELETE']:
+                return True
+
+        return False
+
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+
+        # Managers => can do anything
+        if user.role == UserChoice.MANAGER:
+            return True
+
+        # Clients => must be the owner of the rental
+        if user.role == UserChoice.CLIENT:
+            return obj.client == user
+
+        return False
+
+
+class IsReservationOwnerOrManager(BasePermission):
+    """
+    Custom permission for ReservationModel.
+    - Manager: can do any request
+    - Client: can read (GET, HEAD, OPTIONS) or create (POST) any reservation,
+              can PATCH/PUT/DELETE only their own reservation
+    """
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user.is_authenticated:
+            return False
+
+        if user.role == UserChoice.MANAGER:
+            return True
+
+        if user.role == UserChoice.CLIENT:
+            if request.method in SAFE_METHODS:
+                return True
+            if request.method == 'POST':
+                return True
+            if request.method in ['PATCH', 'PUT', 'DELETE']:
+                return True
+
+        return False
+
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+
+        if user.role == UserChoice.MANAGER:
+            return True
+
+        if user.role == UserChoice.CLIENT:
+            return obj.client == user
+
+        return False
