@@ -1,0 +1,80 @@
+<!-- payments/templates/payments/payment_receipt.html -->
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Payment Receipt</title>
+    <style>
+        /* Add some basic styling */
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f4;
+            padding: 20px;
+        }
+        .receipt {
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 5px;
+        }
+        .receipt h2 {
+            color: #333333;
+        }
+        .receipt p {
+            color: #555555;
+        }
+        .details {
+            margin-top: 20px;
+        }
+        .details table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .details th, .details td {
+            text-align: left;
+            padding: 8px;
+        }
+        .details th {
+            background-color: #f2f2f2;
+        }
+        .footer {
+            margin-top: 30px;
+            color: #777777;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="receipt">
+        <h2>Payment Receipt</h2>
+        <p>Hi {{ user.first_name }},</p>
+        <p>Thank you for your payment. Below are the details of your transaction:</p>
+
+        <div class="details">
+            <table>
+                <tr>
+                    <th>Transaction ID:</th>
+                    <td>{{ payment.transaction_id }}</td>
+                </tr>
+                <tr>
+                    <th>Amount:</th>
+                    <td>${{ payment.amount }}</td>
+                </tr>
+                <tr>
+                    <th>Status:</th>
+                    <td>{{ payment.get_status_display }}</td>
+                </tr>
+                <tr>
+                    <th>Payment Time:</th>
+                    <td>{{ payment.payment_time }}</td>
+                </tr>
+            </table>
+        </div>
+
+        <p>If you have any questions, feel free to contact our support team.</p>
+
+        <div class="footer">
+            <p>&copy; {{ current_year }} Uzinfocom. All rights reserved.</p>
+        </div>
+    </div>
+</body>
+</html>
