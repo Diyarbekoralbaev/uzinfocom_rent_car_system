@@ -1,22 +1,9 @@
-from django.conf import settings
-from django.core.exceptions import ObjectDoesNotExist
-from django.core.mail import send_mail
-
-from users.models import UserModel
+# payments/utils.py
+from .tasks import send_payment_email_task
 
 
-def send_payment_email(email, amount):
+def send_payment_email(payment_id):
     """
-    Sends a payment receipt email to the user.
+    Triggers the Celery task to send a payment receipt email.
     """
-    try:
-        user = UserModel.objects.get(email=email)
-        send_mail(
-            subject='Payment Received',
-            message=f'Hi {user.first_name},\n\nYou have received a payment of ${amount}.\n\nThanks!',
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
-            fail_silently=False,
-        )
-    except ObjectDoesNotExist:
-        pass
+    send_payment_email_task.delay(payment_id)
