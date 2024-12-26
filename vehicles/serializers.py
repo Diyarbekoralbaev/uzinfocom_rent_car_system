@@ -17,9 +17,19 @@ class VehicleSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
         extra_kwargs = {
-            'current_station': {'required': False, 'allow_null': True},
+            'current_station': {'required': True, 'allow_null': True},
             'status': {'required': False},
         }
+
+    def validate_daily_price(self, value):
+        if value < 0:
+            raise serializers.ValidationError("Daily price must be a positive number.")
+        return value
+
+    def validate_current_station(self, value):
+        if not value:
+            raise serializers.ValidationError("Current station is required.")
+        return value
 
 
 class VehicleAvailabilitySerializer(serializers.ModelSerializer):
