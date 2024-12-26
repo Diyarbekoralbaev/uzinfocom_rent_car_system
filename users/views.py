@@ -1,6 +1,8 @@
 from uuid import uuid4
 
 from django.core.cache import cache
+from django.db import transaction
+from django.db.models import F
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import status
@@ -10,9 +12,8 @@ from rest_framework.views import APIView
 
 from .models import UserModel, UserChoice
 from .serializers import UserSerializer, LoginSerializer, VerifySerializer, ChangePasswordSerializer, \
-    ResetPasswordSerializer, ResetPasswordConfirmSerializer, \
-    TopUpSerializer
-from .utils import generate_otp, send_sms_otp
+    ResetPasswordSerializer, ResetPasswordConfirmSerializer
+from .utils import generate_otp, send_sms_otp, send_password_change_notification, send_password_reset_notification
 
 
 class RegisterView(APIView):
@@ -163,6 +164,7 @@ class ChangePasswordView(APIView):
                 return Response({'message': 'Old password is incorrect'}, status=status.HTTP_400_BAD_REQUEST)
             user.set_password(serializer.validated_data['new_password'])
             user.save()
+            send_password_change_notification(user.id)
             return Response({'message': 'Password changed successfully'}, status=status.HTTP_200_OK)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
@@ -186,7 +188,11 @@ class ResetPasswordView(APIView):
     def post(self, request):
         serializer = ResetPasswordSerializer(data=request.data)
         if serializer.is_valid():
-            user = UserModel.objects.filter(username=serializer.validated_data['username']).first()
+            value = serializer.validated_data['email_or_phone']
+            if "@" in value:
+                user = UserModel.objects.filter(email=value).first()
+            else:
+                user = UserModel.objects.filter(phone=value).first()
             if user is None:
                 return Response({'message': 'User not found'}, status=status.HTTP_404_NOT_FOUND)
             verification_id = uuid4()
@@ -237,36 +243,8 @@ class ResetPasswordConfirmView(APIView):
             user.set_password(serializer.validated_data['new_password'])
             user.save()
             cache.delete(verification_id)
+            send_password_reset_notification(user.id)
             return Response({'message': 'Password reset successfully'}, status=status.HTTP_200_OK)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-class TopUpView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    @swagger_auto_schema(
-        tags=['Users'],
-        operation_id='Top up balance',
-        operation_summary='Top up balance',
-        operation_description='Top up the balance of the authenticated user',
-        request_body=TopUpSerializer,
-        responses={200: openapi.Schema(
-            type=openapi.TYPE_OBJECT,
-            properties={
-                'message': openapi.Schema(type=openapi.TYPE_STRING),
-            }
-        )}
-    )
-    def post(self, request):
-        serializer = TopUpSerializer(data=request.data)
-        if serializer.is_valid():
-            if request.user.role == UserChoice.MANAGER:
-                user = UserModel.objects.get(id=serializer.validated_data['user_id'])
-                user.balance += serializer.validated_data['amount']
-                user.save()
-                return Response({'message': 'Balance topped up successfully'}, status=status.HTTP_200_OK)
-            return Response({'message': 'You do not have permission to top up the balance'},
-                            status=status.HTTP_403_FORBIDDEN)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
