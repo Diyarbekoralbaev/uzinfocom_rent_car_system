@@ -258,3 +258,17 @@ class TopUpView(APIView):
             return Response({'message': 'You do not have permission to top up the balance'},
                             status=status.HTTP_403_FORBIDDEN)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class UserView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    @swagger_auto_schema(
+        tags=['Users'],
+        operation_id='Get user details',
+        operation_summary='Get user details',
+        operation_description='Get the details of the authenticated user',
+        responses={200: UserSerializer()}
+    )
+    def get(self, request):
+        return Response(UserSerializer(request.user).data, status=status.HTTP_200_OK)
