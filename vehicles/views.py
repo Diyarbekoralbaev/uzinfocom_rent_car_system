@@ -35,30 +35,6 @@ class VehicleViewSet(viewsets.ModelViewSet):
             return self.queryset
         return VehicleModel.objects.none()
 
-    def perform_create(self, serializer):
-        """
-        Restrict creation to managers only.
-        """
-        if self.request.user.role != 'MANAGER':
-            raise PermissionDenied("You do not have permission to create a vehicle.")
-        serializer.save()
-
-    def perform_update(self, serializer):
-        """
-        Restrict updates to managers only.
-        """
-        if self.request.user.role != 'MANAGER':
-            raise PermissionDenied("You do not have permission to update a vehicle.")
-        serializer.save()
-
-    def perform_destroy(self, instance):
-        """
-        Restrict deletion to managers only.
-        """
-        if self.request.user.role != 'MANAGER':
-            raise PermissionDenied("You do not have permission to delete a vehicle.")
-        instance.delete()
-
     @swagger_auto_schema(
         operation_id="set_vehicle_status",
         operation_summary="Set vehicle availability",
