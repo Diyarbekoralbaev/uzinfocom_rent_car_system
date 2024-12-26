@@ -15,7 +15,7 @@ from users.models import UserChoice, UserModel
 from vehicles.models import VehicleModel, VehicleStatusChoices
 from .models import RentalModel, ReservationModel, RentalStatusChoices, ReservationStatusChoices
 from .serializers import RentalSerializer, ReservationSerializer
-from .utils import is_near_station, send_email
+from .utils import is_near_station, send_email_notification
 
 
 @method_decorator(gzip_page, name='dispatch')
@@ -84,9 +84,9 @@ class RentalViewSet(viewsets.ModelViewSet):
             )
 
             # Send email notification
-            send_email(
+            send_email_notification(
+                user_id=user.id,
                 subject="Rental Request",
-                to_email=user.email,
                 message=f"Your rental request for {car} has been received. Please wait for manager approval."
             )
 
@@ -114,9 +114,9 @@ class RentalViewSet(viewsets.ModelViewSet):
                     rental.car.save()
 
                     # Send email
-                    send_email(
+                    send_email_notification(
+                        user_id=user.id,
                         subject="Rental Cancelled",
-                        to_email=user.email,
                         message=f"Your rental for {rental.car} has been cancelled."
                     )
                 serializer.instance = rental
@@ -149,10 +149,10 @@ class RentalViewSet(viewsets.ModelViewSet):
                 rental.delete()
 
                 # Send email
-                send_email(
+                send_email_notification(
+                    user_id=rental.client.id,
                     subject="Rental Deleted",
-                    to_email=rental.client.email,
-                    message=f"Your rental for {rental.car} has been deleted by the manager."
+                    message=f"Your rental for {rental.car} has been deleted by a manager."
                 )
             return Response(status=status.HTTP_204_NO_CONTENT)
         elif user.role == UserChoice.CLIENT:
@@ -170,9 +170,9 @@ class RentalViewSet(viewsets.ModelViewSet):
                     rental.car.save()
 
                     # Send email
-                    send_email(
+                    send_email_notification(
+                        user_id=rental.client.id,
                         subject="Rental Cancelled",
-                        to_email=user.email,
                         message=f"Your rental for {rental.car} has been cancelled."
                     )
                 return Response(RentalSerializer(rental).data, status=status.HTTP_200_OK)
@@ -251,9 +251,9 @@ class RentalViewSet(viewsets.ModelViewSet):
             rental.car.save()
 
             # Send email notification
-            send_email(
+            send_email_notification(
+                user_id=rental.client.id,
                 subject="Rental Status Updated",
-                to_email=rental.client.email,
                 message=f"Your rental for {rental.car} has been updated to {new_status}."
             )
 
@@ -313,9 +313,9 @@ class RentalViewSet(viewsets.ModelViewSet):
             vehicle.save()
 
         # Send email notification
-        send_email(
+        send_email_notification(
+            user_id=user.id,
             subject="Car Returned",
-            to_email=user.email,
             message=f"Your rental for {vehicle} has been completed. Thank you for using our service."
         )
 
@@ -383,10 +383,10 @@ class ReservationViewSet(viewsets.ModelViewSet):
             )
 
             # Send email notification
-            send_email(
+            send_email_notification(
+                user_id=user.id,
                 subject="Reservation Request",
-                to_email=user.email,
-                message=f"Your reservation request for {car} has been received. Please wait for manager approval."
+                message=f"Your reservation for {car} has been received. Please wait for manager approval."
             )
 
     def update(self, request, *args, **kwargs):
@@ -481,9 +481,9 @@ class ReservationViewSet(viewsets.ModelViewSet):
             reservation.save()
 
             # Send email notification
-            send_email(
+            send_email_notification(
+                user_id=reservation.client.id,
                 subject="Reservation Status Updated",
-                to_email=reservation.client.email,
                 message=f"Your reservation for {reservation.car} has been updated to {new_status}."
             )
 
