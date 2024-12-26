@@ -1,6 +1,6 @@
 from django.contrib.auth import authenticate
 from rest_framework import serializers
-
+import re
 from .models import UserModel, UserChoice
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -24,6 +24,13 @@ class UserSerializer(serializers.ModelSerializer):
     def validate_username(self, value):
         if UserModel.objects.filter(username=value, is_verified=True).exists():
             raise serializers.ValidationError('This username is already taken.')
+        return value
+
+    def validate_phone(self, value):
+        if not re.match(r"^\d{12}$", value):
+            raise serializers.ValidationError('Phone number must be in the format: 998XXXXXXXXX')
+        if UserModel.objects.filter(phone=value, is_verified=True).exists():
+            raise serializers.ValidationError('This phone number is already taken.')
         return value
 
     def validate(self, data):
