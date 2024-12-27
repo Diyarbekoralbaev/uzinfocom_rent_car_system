@@ -1,14 +1,5 @@
 from random import randint
-
-from eskiz.client.sync import ClientSync
-from .models import UserModel
-from uzinfocom_rent_car_system_drf.settings import ESKIZ_EMAIL, ESKIZ_PASSWORD
 from .tasks import send_otp_email_task, send_sms_otp_task, send_email_notifications_task
-
-eskiz_client = ClientSync(
-    email=ESKIZ_EMAIL,
-    password=ESKIZ_PASSWORD
-)
 
 
 def generate_otp():
