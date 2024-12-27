@@ -35,7 +35,7 @@ def send_sms_otp_task(phone, otp):
             {
                 "destinations": [{"to": phone}],
                 "from": settings.INFOBIP_SENDER,
-                "text": f"WELCOME TO RENT CAR SYSTEM. Your OTP is: {otp}"
+                "text": f"Your confirmation code for Rent Car System is: {otp}"
             }
         ]
     }
