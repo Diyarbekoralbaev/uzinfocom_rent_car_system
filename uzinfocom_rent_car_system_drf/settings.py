@@ -205,10 +205,10 @@ EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
 
-SMS_RU_API_ID = os.getenv('SMS_RU_API_ID')
-MAX_DISTANCE = float(os.getenv('MAX_DISTANCE'))
-ESKIZ_EMAIL = os.getenv('ESKIZ_EMAIL')
-ESKIZ_PASSWORD = os.getenv('ESKIZ_PASSWORD')
+INFOBIP_API_KEY = os.getenv('INFOBIP_API_KEY')
+INFOBIP_BASE_URL = "https://wgv9lq.api.infobip.com"
+INFOBIP_SMS_ENDPOINT = "/sms/2/text/advanced"
+INFOBIP_SENDER = "ServiceSMS"
 
 CELERY_BROKER_URL = f'redis://{os.getenv("REDIS_HOST")}:{os.getenv("REDIS_PORT")}/0'
 CELERY_RESULT_BACKEND = f'redis://{os.getenv("REDIS_HOST")}:{os.getenv("REDIS_PORT")}/0'
