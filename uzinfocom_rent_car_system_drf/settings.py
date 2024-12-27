@@ -210,6 +210,8 @@ INFOBIP_BASE_URL = "https://wgv9lq.api.infobip.com"
 INFOBIP_SMS_ENDPOINT = "/sms/2/text/advanced"
 INFOBIP_SENDER = "ServiceSMS"
 
+MAX_DISTANCE = os.getenv('MAX_DISTANCE')
+
 CELERY_BROKER_URL = f'redis://{os.getenv("REDIS_HOST")}:{os.getenv("REDIS_PORT")}/0'
 CELERY_RESULT_BACKEND = f'redis://{os.getenv("REDIS_HOST")}:{os.getenv("REDIS_PORT")}/0'
 CELERY_ACCEPT_CONTENT = ['json']
