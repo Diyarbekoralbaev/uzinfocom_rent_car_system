@@ -99,7 +99,7 @@ A simplified view:
 - **Pytest / Django Test / DRF Test** (unit tests / integration tests)
 - **Gunicorn** (production WSGI server)
 - **Docker & docker-compose** (containerization)
-- **sms.ru** or any alternative gateway (example code references a different provider, can be adjusted to sms.ru)
+- **infobip.com** or any alternative gateway (example code references a different provider, can be adjusted to sms.ru)
 
 ---
 
@@ -124,11 +124,6 @@ DATABASE_PASSWORD=02052005
 DATABASE_HOST=db
 DATABASE_PORT=5432
 
-# For sms.ru or your SMS provider:
-SMS_RU_API_ID="YOUR_SMS_API_ID"
-ESKIZ_EMAIL=user@gmail.com
-ESKIZ_PASSWORD=yourpassword
-
 # Celery / Redis settings (if you want to override defaults):
 REDIS_HOST=redis
 REDIS_PORT=6379
@@ -140,6 +135,7 @@ EMAIL_HOST_USER=user@gmail.com
 EMAIL_HOST_PASSWORD=yourpassword
 
 MAX_DISTANCE=0.5 # for location check in km
+INFOBIP_API_KEY=your-api-key-for-infobip
 ```
 > **Note:** Adjust these variables according to your needs.  
 
